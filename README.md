@@ -26,7 +26,7 @@
 ## ⚠️ Про ложные срабатывания антивирусов
 
 Некоторые антивирусы (Microsoft Defender, Avast, Cynet и др.) могут помечать
-`Cleaner.exe` как подозрительный или даже как троян (детекты вида
+готовые `.exe`-файлы как подозрительные или даже как троян (детекты вида
 `Wacatac` / `MalwareX`). Это **generic-эвристика**, а не реальный вредоносный код:
 антивирусы реагируют на признаки самого файла — упаковка PyInstaller,
 отсутствие цифровой подписи издателя и массовое удаление файлов — именно так
@@ -54,7 +54,8 @@
   (`Cache`, `CachedData`, `CachedExtensionVSIXs`, `Code Cache`, `GPUCache`).
 - **Приложения** — кэш Discord, Slack и встроенного браузера Steam.
 
-Отключено по умолчанию (включается переключателями в начале `cleaner.py`):
+Два дополнительных переключателя в начале `cleaner.py`. В `Cleaner.exe` они
+выключены, в `CleanerNoGames.exe` включены:
 - `CLEAN_SHADER_CACHES` — шейдерные кэши NVIDIA/AMD/Intel/D3D. Удаление безопасно,
   но игры потом заново компилируют шейдеры, и первый запуск может идти очень долго.
 - `CLEAN_DOT_CACHE` — папка `.cache` в профиле. Там часто лежат скачанные
@@ -79,11 +80,22 @@
 
 ## Способ 1: скачать готовый .exe
 
-Скачайте сборку из [Releases](../../releases), запустите (**не от имени
-администратора**), проверьте список путей и подтвердите удаление.
-Ничего устанавливать не нужно.
+В [Releases](../../releases) доступны две сборки — выберите подходящую:
 
-**Ограничение**: список папок в готовой сборке зафиксирован и **не
+| Файл | Что чистит |
+|---|---|
+| `Cleaner.exe` | Обычные кэши и временные файлы: браузеры, Windows, инструменты разработки, приложения. Шейдерные кэши игр и папку `.cache` **не трогает** — подходит всем, в том числе игрокам |
+| `CleanerNoGames.exe` | То же самое **плюс** шейдерные кэши видеокарты (NVIDIA/AMD/Intel/D3D) и папку `.cache` в профиле (там часто лежат скачанные модели, например huggingface) |
+
+Если вы играете, берите `Cleaner.exe`. `CleanerNoGames.exe` освободит больше
+места, но игры после него заново компилируют шейдеры (первый запуск может идти
+очень долго), а скачанные в `.cache` модели придётся загружать снова.
+Берите его, только если на компьютере нет игр или вас это не смущает.
+
+Запустите нужный файл (**не от имени администратора**), проверьте список путей
+и подтвердите удаление. Ничего устанавливать не нужно.
+
+**Ограничение**: список папок в готовых сборках зафиксирован и **не
 редактируется**. Хотите чистить другие папки — используйте способ 2.
 
 ## Способ 2: свой .py-файл с возможностью менять пути
@@ -107,7 +119,8 @@
    ```
    python cleaner.py
    ```
-4. (Опционально) Соберите свой exe:
+4. (Опционально) Соберите свой exe (чтобы получить версию как `CleanerNoGames.exe`, поставьте
+   `CLEAN_SHADER_CACHES = True` и `CLEAN_DOT_CACHE = True` перед сборкой):
    ```
    pip install pyinstaller
    pyinstaller --onefile --console --name Cleaner cleaner.py
@@ -148,7 +161,7 @@ confirmation, and only then deletes.
 ## ⚠️ About antivirus false positives
 
 Some antivirus engines (Microsoft Defender, Avast, Cynet, etc.) may flag
-`Cleaner.exe` as suspicious or even as a trojan (`Wacatac` / `MalwareX`
+the prebuilt `.exe` files as suspicious or even as a trojan (`Wacatac` / `MalwareX`
 detections). This is **generic heuristic detection**, not actual malicious
 code: antivirus engines react to characteristics of the file itself — a
 PyInstaller package, no publisher's digital signature, and bulk file
@@ -177,7 +190,8 @@ bookmarks, extensions, and sessions are not touched.
   (`Cache`, `CachedData`, `CachedExtensionVSIXs`, `Code Cache`, `GPUCache`).
 - **Apps** — Discord, Slack, and Steam's built-in browser cache.
 
-Disabled by default (enabled by switches at the top of `cleaner.py`):
+Two extra switches at the top of `cleaner.py`. They are off in `Cleaner.exe`
+and on in `CleanerNoGames.exe`:
 - `CLEAN_SHADER_CACHES` — NVIDIA/AMD/Intel/D3D shader caches. Safe to delete,
   but games have to recompile shaders afterwards, and the first launch can
   take a very long time.
@@ -204,11 +218,22 @@ The full list of paths is at the top of `cleaner.py`.
 
 ## Method 1: download the ready-made .exe
 
-Download the build from [Releases](../../releases), run it (**not as
-administrator**), check the list of paths, and confirm the deletion.
-Nothing to install.
+[Releases](../../releases) has two builds — pick the one you need:
 
-**Limitation**: the list of folders in the prebuilt exe is fixed and
+| File | What it cleans |
+|---|---|
+| `Cleaner.exe` | Regular caches and temporary files: browsers, Windows, dev tools, apps. Does **not** touch game shader caches or the `.cache` folder — fine for everyone, including gamers |
+| `CleanerNoGames.exe` | The same **plus** GPU shader caches (NVIDIA/AMD/Intel/D3D) and the `.cache` folder in your profile (it often holds downloaded models, e.g. huggingface) |
+
+If you play games, use `Cleaner.exe`. `CleanerNoGames.exe` frees more space,
+but games will recompile shaders afterwards (the first launch can take a very
+long time), and models downloaded into `.cache` will have to be downloaded
+again. Use it only if you have no games or don't mind.
+
+Run the one you chose (**not as administrator**), check the list of paths, and
+confirm the deletion. Nothing to install.
+
+**Limitation**: the list of folders in the prebuilt exe files is fixed and
 **cannot be edited**. To clean other folders, use Method 2.
 
 ## Method 2: your own .py file with editable paths
@@ -232,7 +257,8 @@ Nothing to install.
    ```
    python cleaner.py
    ```
-4. (Optional) Build your own exe:
+4. (Optional) Build your own exe (to get the `CleanerNoGames.exe` variant, set
+   `CLEAN_SHADER_CACHES = True` and `CLEAN_DOT_CACHE = True` before building):
    ```
    pip install pyinstaller
    pyinstaller --onefile --console --name Cleaner cleaner.py

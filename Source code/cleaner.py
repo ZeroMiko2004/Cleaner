@@ -1,25 +1,129 @@
+import glob
 import os
 import shutil
 import stat
 import sys
 
 # ============================================================
-# ПРОСТО ДОБАВЛЯЙ СТРОКИ С ПУТЯМИ К ПАПКАМ
+# НАСТРОЙКИ — всё, что нужно менять, находится в этом блоке
 # ============================================================
 
-# Автоматически определяем папку текущего пользователя Windows
-# (C:\Users\ИмяПользователя) — так пути работают у любого человека,
-# запускающего программу, без ручной правки.
-USER_PROFILE = os.environ.get("USERPROFILE", os.path.expanduser("~"))
+# ---------- Переключатели (True — чистить, False — не трогать) ----------
+# Кэши шейдеров NVIDIA/AMD/Intel/D3D. Удаление безопасно, но игры потом
+# заново компилируют шейдеры (первый запуск может идти очень долго).
+CLEAN_SHADER_CACHES = False
 
+# Папка .cache в профиле пользователя. Там часто лежат скачанные модели
+# (например huggingface) — после удаления они скачиваются заново.
+CLEAN_DOT_CACHE = False
+
+# ---------- Системные папки (определяются сами для любого пользователя) ----------
+USER_PROFILE = os.environ.get("USERPROFILE", os.path.expanduser("~"))
+LOCAL = os.environ.get("LOCALAPPDATA", USER_PROFILE + r"\AppData\Local")     # ...\AppData\Local
+ROAMING = os.environ.get("APPDATA", USER_PROFILE + r"\AppData\Roaming")      # ...\AppData\Roaming
+
+# ---------- Браузеры на движке Chromium ----------
+# Профили (Default, Profile 1, Profile 2, Profile 3...) ищутся автоматически.
+# Добавить браузер — допишите строку в первый список.
+# Добавить папку кэша — допишите строку во второй список.
+CHROMIUM_BROWSERS = [
+    LOCAL + r"\Google\Chrome\User Data",
+    LOCAL + r"\Microsoft\Edge\User Data",
+    LOCAL + r"\BraveSoftware\Brave-Browser\User Data",
+    LOCAL + r"\Vivaldi\User Data",
+]
+
+CHROMIUM_CACHE_FOLDERS = [
+    r"Cache\Cache_Data",
+    r"Code Cache\js",
+    r"Code Cache\wasm",
+    r"GPUCache",
+    r"DawnGraphiteCache",
+    r"DawnWebGPUCache",
+    r"Service Worker\CacheStorage",
+]
+
+# ---------- Ручной список путей ----------
+# Убрать путь — поставьте # перед строкой.
+# Добавить — скопируйте любую строку и поменяйте путь (в конце запятая).
 PATHS = [
-    os.path.join(USER_PROFILE, r"AppData\Local\Google\Chrome\User Data\Default\Service Worker\CacheStorage"),
-    os.path.join(USER_PROFILE, r"AppData\Local\CrashDumps"),
-    os.path.join(USER_PROFILE, ".cache"),
-    os.path.join(USER_PROFILE, r"AppData\Local\Temp"),
+    # ---------- Windows ----------
+    LOCAL + r"\Temp",
+    LOCAL + r"\CrashDumps",
+    LOCAL + r"\Microsoft\Windows\INetCache",
+    LOCAL + r"\Microsoft\Windows\WER\ReportArchive",
+    LOCAL + r"\Microsoft\Windows\WER\ReportQueue",
+
+    # ---------- Opera / Opera GX ----------
+    LOCAL + r"\Opera Software\Opera Stable\Cache",
+    LOCAL + r"\Opera Software\Opera GX Stable\Cache",
+
+    # ---------- Разработка ----------
+    LOCAL + r"\pip\Cache",
+    LOCAL + r"\uv\cache",
+    LOCAL + r"\npm-cache",
+    LOCAL + r"\Yarn\Cache",
+    LOCAL + r"\NuGet\v3-cache",
+
+    # ---------- VS Code ----------
+    ROAMING + r"\Code\Cache",
+    ROAMING + r"\Code\CachedData",
+    ROAMING + r"\Code\CachedExtensionVSIXs",
+    ROAMING + r"\Code\Code Cache",
+    ROAMING + r"\Code\GPUCache",
+
+    # ---------- Discord ----------
+    ROAMING + r"\discord\Cache",
+    ROAMING + r"\discord\Code Cache",
+    ROAMING + r"\discord\GPUCache",
+
+    # ---------- Slack ----------
+    ROAMING + r"\Slack\Cache",
+    ROAMING + r"\Slack\Code Cache",
+    ROAMING + r"\Slack\GPUCache",
+    ROAMING + r"\Slack\Service Worker\CacheStorage",
+
+    # ---------- Steam (кэш встроенного браузера) ----------
+    LOCAL + r"\Steam\htmlcache",
+
     # Добавляй сюда свои пути, например:
     # r"D:\Мусор",
 ]
+
+# ---------- Автоматический поиск: браузеры Chromium (все профили) ----------
+for browser in CHROMIUM_BROWSERS:
+    profiles = glob.glob(browser + r"\Default") + glob.glob(browser + r"\Profile *")
+    for profile in profiles:
+        for folder in CHROMIUM_CACHE_FOLDERS:
+            PATHS.append(profile + "\\" + folder)
+    # кэши шейдеров самого браузера лежат в корне User Data
+    for folder in (r"GrShaderCache", r"ShaderCache", r"GraphiteDawnCache"):
+        PATHS.append(browser + "\\" + folder)
+
+# ---------- Автоматический поиск: Firefox (случайное имя папки профиля) ----------
+for profile in glob.glob(LOCAL + r"\Mozilla\Firefox\Profiles\*"):
+    PATHS.append(profile + r"\cache2")
+    PATHS.append(profile + r"\startupCache")
+
+# ---------- Переключатели ----------
+if CLEAN_SHADER_CACHES:
+    PATHS += [
+        LOCAL + r"\NVIDIA\GLCache",
+        LOCAL + r"\NVIDIA\DXCache",
+        LOCAL + r"\NVIDIA\OptixCache",
+        LOCAL + r"\AMD\DxCache",
+        LOCAL + r"\AMD\GLCache",
+        LOCAL + r"\AMD\VkCache",
+        LOCAL + r"\Intel\ShaderCache",
+        LOCAL + r"\D3DSCache",
+    ]
+
+if CLEAN_DOT_CACHE:
+    PATHS.append(USER_PROFILE + r"\.cache")
+
+# Оставляем только реально существующие папки и убираем дубли, чтобы у
+# других людей не было десятков строк "не найдены". Не нужно — удалите строку.
+PATHS = [p for p in dict.fromkeys(PATHS) if os.path.isdir(p)]
 
 # Пути, которые нельзя трогать НИКОГДА, даже если случайно попадут в PATHS
 # (сюда стоит добавить корни дисков и системные папки)
@@ -240,14 +344,17 @@ def main():
 
     total_size = sum(s for _, s, _ in all_items)
 
-    # Группируем превью по исходной родительской папке, чтобы было видно,
-    # "куда ведут пути"
-    print(f"\nНайдено объектов: {len(all_items)}")
-    print(f"Общий размер (на удаление): {human_size(total_size)}\n")
-    print("Список того, что будет удалено:")
+    print("\nСписок того, что будет удалено:")
     for p, s, t in sorted(all_items, key=lambda x: -x[1]):
         print(f"  [{t:6}] {human_size(s):>10}  {os.path.abspath(p)}")
 
+    # Итог выводим ПОСЛЕ списка, чтобы он был виден прямо над вопросом
+    # и не терялся при прокрутке длинного списка
+    print()
+    print("=" * 60)
+    print(f"Найдено объектов: {len(all_items)}")
+    print(f"Общий размер (на удаление): {human_size(total_size)}")
+    print("=" * 60)
     print()
     print("(Если ответ 'y' не срабатывает — проверьте раскладку клавиатуры,")
     print(" либо просто введите 'да'.)")

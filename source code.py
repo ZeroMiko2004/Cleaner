@@ -34,7 +34,9 @@ import shutil
 import stat
 import queue
 import threading
+import time
 import traceback
+from collections import OrderedDict
 
 import pygame
 
@@ -171,12 +173,19 @@ PATHS = [
     LOCAL + r"\Steam\htmlcache",
 ]
 
+# Кэш Redshift (Cinebench). У папки Cinebench_<код> суффикс случайный и у
+# разных установок разный, поэтому ищем через маску * в обеих ветках Maxon.
+for base in (ROAMING + r"\Maxon", LOCAL + r"\Maxon"):
+    for cb in glob.glob(base + r"\Cinebench_*"):
+        PATHS.append(cb + r"\Redshift\Cache")
+
 for browser in CHROMIUM_BROWSERS:
     profiles = glob.glob(browser + r"\Default") + glob.glob(browser + r"\Profile *")
     for profile in profiles:
         for folder in CHROMIUM_CACHE_FOLDERS:
             PATHS.append(profile + "\\" + folder)
-    for folder in (r"GrShaderCache", r"ShaderCache", r"GraphiteDawnCache"):
+    for folder in (r"GrShaderCache", r"ShaderCache", r"GraphiteDawnCache",
+                   r"component_crx_cache"):
         PATHS.append(browser + "\\" + folder)
 
 for profile in glob.glob(LOCAL + r"\Mozilla\Firefox\Profiles\*"):
@@ -351,6 +360,103 @@ def recompute_size(path: str) -> int:
 
 
 # ============================================================================
+#  БУФЕР ОБМЕНА
+# ----------------------------------------------------------------------------
+#  Копирование выделенного текста (Ctrl+C) и всего текста (Ctrl+A).
+#  На Windows пишем в буфер напрямую через WinAPI в формате Unicode —
+#  так кириллица и символы вроде ✓ гарантированно вставляются без искажений.
+#  Если не вышло (или это не Windows) — пробуем средства самого pygame.
+# ============================================================================
+
+def _plural_lines(n: int) -> str:
+    """1 строка, 2 строки, 5 строк."""
+    if n % 10 == 1 and n % 100 != 11:
+        return "строка"
+    if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
+        return "строки"
+    return "строк"
+
+
+def _clipboard_put_win32(text: str) -> bool:
+    import ctypes
+    from ctypes import wintypes
+
+    CF_UNICODETEXT = 13
+    GMEM_MOVEABLE = 0x0002
+
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+    user32.OpenClipboard.argtypes = [wintypes.HWND]
+    user32.OpenClipboard.restype = wintypes.BOOL
+    user32.CloseClipboard.argtypes = []
+    user32.CloseClipboard.restype = wintypes.BOOL
+    user32.EmptyClipboard.argtypes = []
+    user32.EmptyClipboard.restype = wintypes.BOOL
+    user32.SetClipboardData.argtypes = [wintypes.UINT, wintypes.HANDLE]
+    user32.SetClipboardData.restype = wintypes.HANDLE
+    kernel32.GlobalAlloc.argtypes = [wintypes.UINT, ctypes.c_size_t]
+    kernel32.GlobalAlloc.restype = wintypes.HGLOBAL
+    kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
+    kernel32.GlobalLock.restype = wintypes.LPVOID
+    kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+    kernel32.GlobalUnlock.restype = wintypes.BOOL
+    kernel32.GlobalFree.argtypes = [wintypes.HGLOBAL]
+    kernel32.GlobalFree.restype = wintypes.HGLOBAL
+
+    # В буфере Windows переводы строк принято хранить как \r\n.
+    data = (text.replace("\r\n", "\n").replace("\n", "\r\n") + "\0").encode("utf-16-le")
+
+    # Буфер может быть на долю секунды занят другой программой — пробуем несколько раз.
+    opened = False
+    for _ in range(10):
+        if user32.OpenClipboard(None):
+            opened = True
+            break
+        time.sleep(0.02)
+    if not opened:
+        return False
+
+    try:
+        user32.EmptyClipboard()
+        handle = kernel32.GlobalAlloc(GMEM_MOVEABLE, len(data))
+        if not handle:
+            return False
+        ptr = kernel32.GlobalLock(handle)
+        if not ptr:
+            kernel32.GlobalFree(handle)
+            return False
+        ctypes.memmove(ptr, data, len(data))
+        kernel32.GlobalUnlock(handle)
+        if not user32.SetClipboardData(CF_UNICODETEXT, handle):
+            kernel32.GlobalFree(handle)
+            return False
+        return True  # после успеха память принадлежит системе — освобождать нельзя
+    finally:
+        user32.CloseClipboard()
+
+
+def clipboard_put(text: str) -> bool:
+    """Кладёт текст в буфер обмена. True — получилось."""
+    if os.name == "nt":
+        try:
+            if _clipboard_put_win32(text):
+                return True
+        except Exception:
+            pass
+    try:
+        if hasattr(pygame.scrap, "put_text"):          # pygame-ce
+            pygame.scrap.put_text(text)
+            return True
+        if not pygame.scrap.get_init():
+            pygame.scrap.init()
+        pygame.scrap.put(pygame.SCRAP_TEXT, text.encode("utf-8"))
+        return True
+    except Exception:
+        return False
+
+
+# ============================================================================
 #  TERMINAL — окно Pygame, прикидывающееся терминалом
 # ============================================================================
 
@@ -365,6 +471,14 @@ class Terminal:
     SCROLLBAR_TRACK_COLOR = (26, 26, 26)
     SCROLLBAR_THUMB_COLOR = (85, 85, 85)
     SCROLLBAR_THUMB_ACTIVE = (150, 150, 150)
+
+    # Сколько отрисованных строк держать в памяти. Одна строка — это целая
+    # картинка (~50 КБ), поэтому без лимита кэш рос по мере прокрутки лога
+    # и занимал сотни МБ. На экране помещается ~40 строк, 400 с запасом.
+    LINE_CACHE_MAX = 400
+
+    # Цвет подсветки выделенного текста.
+    SELECTION_COLOR = (38, 79, 120)
 
     def __init__(self, title: str = "Cleaner"):
         pygame.init()
@@ -407,7 +521,7 @@ class Terminal:
         self.content = []
         self.lines = []
         self.scroll = 0
-        self._line_cache = {}
+        self._line_cache = OrderedDict()
 
         # Запоминаем ширину в СИМВОЛАХ, под которую сейчас отрендерены lines.
         # Нужно, чтобы при ресайзе перерендерить только при реальном изменении
@@ -428,6 +542,16 @@ class Terminal:
         self.scrollbar_dragging = False
         self.scrollbar_drag_offset = 0
         self.scrollbar_hover = False
+
+        # ---- Выделение текста ----
+        # Позиции — пары (номер строки в self.lines, номер символа в строке).
+        self.sel_anchor = None   # где нажали кнопку мыши
+        self.sel_caret = None    # где мышь сейчас
+        self.selecting = False   # кнопка мыши зажата
+
+        # ---- Короткая подсказка в углу («Скопировано») ----
+        self.toast_text = ""
+        self.toast_until = 0
 
         # ---- Флаги и очереди общения с воркером ----
         self.running = True
@@ -533,7 +657,8 @@ class Terminal:
         и все переносы надо пересчитать.
         """
         self.lines = []
-        self._line_cache = {}
+        self._line_cache.clear()
+        self._clear_selection()
         for item in self.content:
             if item[0] == "rich":
                 self.lines.extend(self._render_renderable(item[1]))
@@ -554,6 +679,7 @@ class Terminal:
             self._drain_queue()
             self._handle_events()
             self._apply_fast_scroll()
+            self._apply_selection_autoscroll()
             self._draw()
             self.clock.tick(30)
             self.cursor_blink_ms = (self.cursor_blink_ms + 33) % 1000
@@ -572,12 +698,14 @@ class Terminal:
                 # Запоминаем «сырьё», чтобы уметь пересобрать при ресайзе.
                 self.content.append(("rich", renderable))
                 self.lines.extend(self._render_renderable(renderable))
-                self.scroll = 10 ** 9
+                if not self.selecting:
+                    self.scroll = 10 ** 9
             elif kind == "ask":
                 self.input_active = True
                 self.input_text = ""
                 self.input_prompt = msg[1]
-                self.scroll = 10 ** 9
+                if not self.selecting:
+                    self.scroll = 10 ** 9
             elif kind == "close":
                 self.running = False
                 try:
@@ -618,6 +746,8 @@ class Terminal:
             elif e.type == pygame.MOUSEBUTTONUP:
                 self._on_mouse_up(e)
             elif e.type == pygame.KEYDOWN:
+                if e.mod & pygame.KMOD_CTRL and self._handle_ctrl_key(e):
+                    continue
                 if self.input_active:
                     self._on_input_key(e)
                 else:
@@ -629,6 +759,10 @@ class Terminal:
             return
         if e.button == 1:
             track, thumb, max_scroll, _ = self._scrollbar_geometry()
+            if not track.collidepoint(e.pos):
+                # Клик по тексту (не по ползунку) — начинаем выделение.
+                self._start_selection(e.pos)
+                return
             if max_scroll <= 0:
                 return
             if thumb.collidepoint(e.pos):
@@ -643,6 +777,11 @@ class Terminal:
             self.fast_scroll_active = False
         elif e.button == 1:
             self.scrollbar_dragging = False
+            if self.selecting:
+                self.selecting = False
+                if self._selection_range() is None:
+                    # Просто клик без протягивания — снимаем выделение.
+                    self._clear_selection()
 
     def _on_mouse_motion(self, e):
         track, thumb, max_scroll, _ = self._scrollbar_geometry()
@@ -650,6 +789,8 @@ class Terminal:
         if self.scrollbar_dragging:
             new_thumb_y = e.pos[1] - self.scrollbar_drag_offset
             self._set_scroll_from_thumb_y(new_thumb_y, track, thumb, max_scroll)
+        if self.selecting:
+            self.sel_caret = self._hit_test(e.pos)
 
     def _on_scroll_key(self, e):
         if e.key == pygame.K_UP:
@@ -704,6 +845,197 @@ class Terminal:
                 self.input_text += ch
 
     # ------------------------------------------------------------------
+    #  Выделение текста и копирование
+    # ------------------------------------------------------------------
+    def _clamp_scroll(self):
+        """Приводит прокрутку к допустимому значению (10**9 = «в самый низ»)."""
+        max_scroll = max(0, len(self.lines) - self._visible_text_lines())
+        self.scroll = max(0, min(self.scroll, max_scroll))
+
+    def _line_text(self, idx: int) -> str:
+        return "".join(t for t, _ in self.lines[idx])
+
+    def _col_to_x(self, idx: int, col: int) -> int:
+        """Расстояние в пикселях от начала текста строки до символа номер col."""
+        x = 0
+        for text, style in self.lines[idx]:
+            font = self.font_bold if style.get("bold") else self.font
+            if col >= len(text):
+                x += font.size(text)[0]
+                col -= len(text)
+            else:
+                x += font.size(text[:col])[0]
+                break
+        return x
+
+    def _x_to_col(self, idx: int, x: float) -> int:
+        """Какой символ строки находится под точкой x (в пикселях от начала текста)."""
+        col = 0
+        acc = 0
+        for text, style in self.lines[idx]:
+            font = self.font_bold if style.get("bold") else self.font
+            seg_w = font.size(text)[0]
+            if x >= acc + seg_w:
+                acc += seg_w
+                col += len(text)
+                continue
+            prev = 0
+            for i in range(1, len(text) + 1):
+                w = font.size(text[:i])[0]
+                if x < acc + (prev + w) / 2:   # ближе к левому краю символа
+                    return col + i - 1
+                prev = w
+            return col + len(text)
+        return col
+
+    def _hit_test(self, pos):
+        """Точка на экране -> (номер строки, номер символа)."""
+        self._clamp_scroll()
+        x, y = pos
+        row = max(0, min(self._visible_text_lines() - 1, y // self.line_h))
+        idx = max(0, min(len(self.lines) - 1, self.scroll + row))
+        return (idx, self._x_to_col(idx, x - 8))
+
+    def _start_selection(self, pos):
+        if not self.lines:
+            return
+        point = self._hit_test(pos)
+        self.sel_anchor = point
+        self.sel_caret = point
+        self.selecting = True
+
+    def _clear_selection(self):
+        self.sel_anchor = None
+        self.sel_caret = None
+        self.selecting = False
+
+    def _selection_range(self):
+        """((строка, символ) начала, (строка, символ) конца) или None, если ничего не выделено."""
+        a, b = self.sel_anchor, self.sel_caret
+        if a is None or b is None or a == b:
+            return None
+        return (a, b) if a <= b else (b, a)
+
+    def _select_all(self):
+        if not self.lines:
+            return
+        last = len(self.lines) - 1
+        self.sel_anchor = (0, 0)
+        self.sel_caret = (last, len(self._line_text(last)))
+        self.selecting = False
+
+    def _all_text(self) -> str:
+        """
+        Весь текст программы. Берём исходные строки, а не перенесённые под
+        ширину окна — иначе длинные пути в буфере были бы разорваны пополам.
+        Если сейчас ждём ввод — в конец добавляем и строку с вопросом.
+        """
+        chunks = []
+        for item in self.content:
+            if item[0] == "rich":
+                r = item[1]
+                chunks.append(getattr(r, "plain", None) or str(r))
+            else:
+                chunks.append(item[1])
+        if self.input_active:
+            chunks.append(self.input_prompt + self.input_text)
+        text = "\n".join(chunks)
+        return "\n".join(line.rstrip() for line in text.split("\n")).rstrip()
+
+    def _selected_text(self) -> str:
+        rng = self._selection_range()
+        if rng is None:
+            return ""
+        (l1, c1), (l2, c2) = rng
+        last = len(self.lines) - 1
+        if (l1, c1) == (0, 0) and (l2, c2) == (last, len(self._line_text(last))):
+            return self._all_text()   # выделено всё — отдаём без разрывов от переноса
+        parts = []
+        for i in range(l1, l2 + 1):
+            t = self._line_text(i)
+            a = c1 if i == l1 else 0
+            b = c2 if i == l2 else len(t)
+            parts.append(t[a:b])
+        return "\n".join(parts)
+
+    def _copy_text(self, text: str):
+        if not text:
+            self._toast("Нечего копировать")
+        elif clipboard_put(text):
+            n = text.count("\n") + 1
+            self._toast(f"Скопировано: {n} {_plural_lines(n)}")
+        else:
+            self._toast("Не удалось скопировать")
+
+    def _handle_ctrl_key(self, e) -> bool:
+        """
+        Ctrl+A — выделить и скопировать весь текст, Ctrl+C — скопировать выделенное.
+        Клавиша определяется по физическому положению (scancode), поэтому
+        работает и при русской раскладке, где вместо A/C приходят «ф»/«с».
+        """
+        sc = getattr(e, "scancode", None)
+        if e.key == pygame.K_a or sc == pygame.KSCAN_A:
+            self._select_all()
+            self._copy_text(self._all_text())
+            return True
+        if e.key == pygame.K_c or sc == pygame.KSCAN_C:
+            text = self._selected_text()
+            if text:
+                self._copy_text(text)
+            else:
+                self._toast("Нет выделенного текста (Ctrl+A — выделить всё)")
+            return True
+        return False
+
+    def _apply_selection_autoscroll(self):
+        """Если тянуть выделение за верхний/нижний край окна — текст прокручивается."""
+        if not self.selecting:
+            return
+        _, h = self.screen.get_size()
+        mx, my = pygame.mouse.get_pos()
+        if my <= 1:
+            self.scroll = max(0, self.scroll - 1)
+        elif my >= h - 2:
+            self.scroll += 1
+        else:
+            return
+        self.sel_caret = self._hit_test((mx, my))
+
+    def _toast(self, text: str):
+        self.toast_text = text
+        self.toast_until = pygame.time.get_ticks() + 1600
+
+    def _draw_selection(self, start: int, end: int):
+        rng = self._selection_range()
+        if rng is None:
+            return
+        (l1, c1), (l2, c2) = rng
+        for row, i in enumerate(range(start, end)):
+            if i < l1 or i > l2:
+                continue
+            a = c1 if i == l1 else 0
+            b = c2 if i == l2 else len(self._line_text(i))
+            x0 = self._col_to_x(i, a)
+            x1 = self._col_to_x(i, b)
+            if i < l2:
+                x1 += self.char_w // 2   # показываем, что захвачен и перевод строки
+            if x1 > x0:
+                pygame.draw.rect(self.screen, self.SELECTION_COLOR,
+                                 (8 + x0, row * self.line_h, x1 - x0, self.line_h))
+
+    def _draw_toast(self):
+        if not self.toast_text or pygame.time.get_ticks() >= self.toast_until:
+            return
+        w, _ = self.screen.get_size()
+        surf = self.font.render(self.toast_text, True, (240, 240, 240))
+        pad = 8
+        box = pygame.Rect(0, 0, surf.get_width() + 2 * pad, surf.get_height() + 2 * pad)
+        box.topright = (w - self.SCROLLBAR_W - 10, 10)
+        pygame.draw.rect(self.screen, (45, 45, 45), box, border_radius=6)
+        pygame.draw.rect(self.screen, (110, 110, 110), box, width=1, border_radius=6)
+        self.screen.blit(surf, (box.x + pad, box.y + pad))
+
+    # ------------------------------------------------------------------
     #  Ползунок
     # ------------------------------------------------------------------
     def _scrollbar_geometry(self):
@@ -750,6 +1082,7 @@ class Terminal:
 
         start = self.scroll
         end = min(len(self.lines), start + text_fit)
+        self._draw_selection(start, end)
         y = 0
         for i in range(start, end):
             surf = self._get_line_surface(i)
@@ -761,6 +1094,7 @@ class Terminal:
             self._draw_input_line(8, y)
 
         self._draw_scrollbar()
+        self._draw_toast()
         pygame.display.flip()
 
     def _draw_scrollbar(self):
@@ -774,9 +1108,16 @@ class Terminal:
             color = self.SCROLLBAR_THUMB_COLOR
         pygame.draw.rect(self.screen, color, thumb, border_radius=4)
 
+    def _cache_put(self, idx: int, surf: pygame.Surface) -> None:
+        """Кладёт строку в кэш и выбрасывает самые давно не нужные."""
+        self._line_cache[idx] = surf
+        while len(self._line_cache) > self.LINE_CACHE_MAX:
+            self._line_cache.popitem(last=False)
+
     def _get_line_surface(self, idx: int) -> pygame.Surface:
         cached = self._line_cache.get(idx)
         if cached is not None:
+            self._line_cache.move_to_end(idx)
             return cached
 
         segs = self.lines[idx]
@@ -793,7 +1134,7 @@ class Terminal:
 
         if total_w == 0:
             surf = pygame.Surface((1, self.line_h), pygame.SRCALPHA)
-            self._line_cache[idx] = surf
+            self._cache_put(idx, surf)
             return surf
 
         line_surf = pygame.Surface((total_w, self.line_h), pygame.SRCALPHA)
@@ -805,7 +1146,7 @@ class Terminal:
             line_surf.blit(seg_surf, (x, 0))
             x += seg_surf.get_width()
 
-        self._line_cache[idx] = line_surf
+        self._cache_put(idx, line_surf)
         return line_surf
 
     def _effective_fg(self, style) -> tuple:

@@ -152,7 +152,7 @@
    попадут в exe:
    ```
    pip install pyinstaller
-   pyinstaller --onefile --windowed --icon=icon.ico --name Cleaner "source code.py"
+   ppyinstaller --onefile --windowed --icon=icon.ico --name Cleaner cleaner.py
    ```
    `--noconsole` нужен, потому что у программы своё окно и чёрная консоль
    рядом не нужна. Готовый файл появится в `dist\Cleaner.exe`. Флаг
@@ -322,7 +322,7 @@ inside the exe.
    they won't end up in the exe:
    ```
    pip install pyinstaller
-   pyinstaller --onefile --windowed --icon=icon.ico --name Cleaner "source code.py"
+   pyinstaller --onefile --windowed --icon=icon.ico --name Cleaner cleaner.py
    ```
    `--noconsole` is needed because the program has its own window and a black
    console next to it isn't wanted. The result appears at `dist\Cleaner.exe`.

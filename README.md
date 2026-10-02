@@ -74,6 +74,7 @@
 - Окно в виде терминала: цветной вывод, прокрутка колесом мыши, перетаскиваемый
   ползунок справа, быстрая прокрутка зажатой средней кнопкой, размер окна можно
   менять — текст переносится автоматически.
+- Выделять текст и копировать его, при сочетании клавиш Ctrl + A выделяется весь текст программы и можно скопировать весь.
 - Предпросмотр перед удалением: полный список объектов, отсортированный
   по размеру, с абсолютными путями и итоговым весом.
 - Защита от системных папок: даже при опечатке в списке путей скрипт не
@@ -151,7 +152,7 @@
    попадут в exe:
    ```
    pip install pyinstaller
-   pyinstaller --onefile --noconsole --icon=icon.ico --name Cleaner "source code.py"
+   pyinstaller --onefile --windowed --icon=icon.ico --name Cleaner "source code.py"
    ```
    `--noconsole` нужен, потому что у программы своё окно и чёрная консоль
    рядом не нужна. Готовый файл появится в `dist\Cleaner.exe`. Флаг
@@ -240,6 +241,7 @@ list of paths is at the top of
 - Terminal-style window: colored output, mouse wheel scrolling, a draggable
   scrollbar on the right, fast scrolling with the held middle mouse button,
   and a resizable window — text wraps automatically.
+- Select text and copy it; using the Ctrl + A key combination, the entire text of the program is selected and you can copy all of it.
 - Preview before deletion: full list of items sorted by size, with
   absolute paths and the total size.
 - Protection against system folders: even with a typo in the path list,
@@ -320,7 +322,7 @@ inside the exe.
    they won't end up in the exe:
    ```
    pip install pyinstaller
-   pyinstaller --onefile --noconsole --icon=icon.ico --name Cleaner "source code.py"
+   pyinstaller --onefile --windowed --icon=icon.ico --name Cleaner "source code.py"
    ```
    `--noconsole` is needed because the program has its own window and a black
    console next to it isn't wanted. The result appears at `dist\Cleaner.exe`.

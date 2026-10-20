@@ -111,12 +111,42 @@ ICON_PATH = os.path.join(_script_dir(), "icon.ico")
 # Кэши шейдеров NVIDIA/AMD/Intel/D3D. Удаление безопасно, но игры потом
 # заново компилируют шейдеры (первый запуск может идти очень долго).
 
-CLEAN_SHADER_CACHES = True
+CLEAN_SHADER_CACHES = False
 
 # Папка .cache в профиле пользователя. Там часто лежат скачанные модели
 # (например huggingface) — после удаления они скачиваются заново.
 
-CLEAN_DOT_CACHE = True
+CLEAN_DOT_CACHE = False
+
+# ---------- Дерево папок в списке перед удалением ----------
+# Перед вопросом (y/N) программа показывает основные папки, из которых что-то
+# удаляется, и «раскрывает» их: какие внутри папки, сколько они весят, какие
+# файлы. Эти числа влияют ТОЛЬКО на показ, на удаление — нет.
+#   TREE_DEPTH       — сколько уровней вложенных папок раскрывать;
+#   TREE_MAX_FOLDERS — сколько папок показывать внутри одной папки;
+#   TREE_MAX_FILES   — сколько файлов показывать внутри одной папки.
+# Остальное сворачивается в строку «… ещё N ...» с общим весом.
+TREE_DEPTH = 3
+TREE_MAX_FOLDERS = 10
+TREE_MAX_FILES = 5
+
+# ---------- Цвет рамки окна ----------
+# Рамка окна меняет цвет: ЗЕЛЁНАЯ, когда окно программы активно (вы кликнули
+# в него), и КРАСНАЯ, когда вы переключились на другое окно.
+# Цвета задаются как (R, G, B), числа от 0 до 255.
+# Работает на Windows 11 (на Windows 10 рамка просто останется обычной).
+# Чтобы отключить — поставьте CHANGE_BORDER_COLOR = False.
+CHANGE_BORDER_COLOR = True
+BORDER_COLOR_ACTIVE = (0, 200, 0)
+BORDER_COLOR_INACTIVE = (220, 0, 0)
+
+# Заголовок окна (верхняя полоса с названием и кнопками) — тоже меняет цвет.
+# Тёмные оттенки выбраны, чтобы белый текст на них хорошо читался.
+# Отключить только заголовок — CHANGE_TITLEBAR_COLOR = False.
+CHANGE_TITLEBAR_COLOR = True
+TITLEBAR_COLOR_ACTIVE = (0, 130, 0)
+TITLEBAR_COLOR_INACTIVE = (170, 0, 0)
+TITLEBAR_TEXT_COLOR = (255, 255, 255)
 
 USER_PROFILE = os.environ.get("USERPROFILE", os.path.expanduser("~"))
 LOCAL = os.environ.get("LOCALAPPDATA", USER_PROFILE + r"\AppData\Local")
@@ -171,6 +201,8 @@ PATHS = [
     ROAMING + r"\Slack\Service Worker\CacheStorage",
 
     LOCAL + r"\Steam\htmlcache",
+
+    USER_PROFILE + r"\.unsloth\studio\cache",
 ]
 
 # Кэш Redshift (Cinebench). У папки Cinebench_<код> суффикс случайный и у
@@ -206,6 +238,71 @@ if CLEAN_SHADER_CACHES:
 
 if CLEAN_DOT_CACHE:
     PATHS.append(USER_PROFILE + r"\.cache")
+
+# ============================================================================
+#  МОИ ПУТИ — СЮДА МОЖНО САМОМУ ВПИСЫВАТЬ СВОИ ПАПКИ
+# ----------------------------------------------------------------------------
+#  Как добавить свою папку:
+#
+#   1. Откройте папку в Проводнике, кликните в адресную строку и нажмите
+#      Ctrl+C (или Shift + ПКМ по папке -> «Копировать как путь»).
+#
+#   2. Добавьте в список CUSTOM_PATHS ниже новую строку такого вида:
+#
+#          r"C:\Users\MSI\Моя папка\Кэш",
+#
+#      Правила:
+#        - перед первой кавычкой обязательно буква r;
+#        - путь между кавычками (кавычки из Проводника не дублировать);
+#        - слэш в конце пути не ставить;
+#        - в конце строки запятая.
+#
+#   3. Строка, начинающаяся с #, — комментарий (выключена). Чтобы включить
+#      пример — уберите #. Чтобы отключить путь — поставьте # перед ним.
+#
+#   4. Удаляется СОДЕРЖИМОЕ папки, сама папка остаётся.
+#
+#   5. Работает звёздочка * («любое имя») и переменные Windows,
+#      например r"%LOCALAPPDATA%\Temp".
+#
+#   6. Защита (is_forbidden) и вопрос y/N перед удалением остаются в силе.
+#
+#   7. ПОИСК ПАПОК В ПАПКАХ (только для путей из этого списка).
+#      Число CUSTOM_SCAN_DEPTH ниже говорит, на сколько уровней вглубь
+#      заходить:
+#        1 — как у обычных путей: удаляется всё, что лежит прямо в папке
+#            (подпапки целиком);
+#        2 — программа заходит в каждую подпапку и удаляет то, что лежит
+#            ВНУТРИ неё; сами подпапки первого уровня остаются пустыми;
+#        3 — то же, но на уровень глубже, и т.д.
+#      Файлы, лежащие выше нужного уровня, удаляются как обычно.
+#
+#  Внимание: чистите только папки, где лежит именно кэш/временные файлы.
+#  Например, C:\Users\MSI\AppData\Local\Packages целиком чистить нельзя —
+#  там данные приложений Microsoft Store (настройки, логины).
+# ============================================================================
+
+# На сколько уровней вглубь заходить в папках из CUSTOM_PATHS (см. пункт 7).
+CUSTOM_SCAN_DEPTH = 2
+
+CUSTOM_PATHS = [
+    # ---------- ВПИСЫВАЙТЕ СВОИ ПУТИ НИЖЕ ЭТОЙ ЛИНИИ ----------
+
+    # r"D:\Games\SomeGame\Cache",
+
+    # ---------- ВПИСЫВАЙТЕ СВОИ ПУТИ ВЫШЕ ЭТОЙ ЛИНИИ ----------
+]
+
+CUSTOM_RESOLVED = []
+for _p in CUSTOM_PATHS:
+    _p = os.path.expandvars(_p.strip().strip('"')).rstrip("\\/")
+    if not _p:
+        continue
+    if "*" in _p or "?" in _p:
+        CUSTOM_RESOLVED += glob.glob(_p)
+    else:
+        CUSTOM_RESOLVED.append(_p)
+PATHS += CUSTOM_RESOLVED
 
 PATHS = [p for p in dict.fromkeys(PATHS) if os.path.isdir(p)]
 
@@ -283,6 +380,42 @@ def collect_items(path: str):
     return items
 
 
+def _is_link_or_junction(path: str) -> bool:
+    if os.path.islink(path):
+        return True
+    isjunction = getattr(os.path, "isjunction", None)
+    return bool(isjunction and isjunction(path))
+
+
+def collect_items_nested(path: str, depth: int, parents=None):
+    """Как collect_items, но заходит в подпапки на depth уровней.
+
+    depth=1 — то же, что collect_items (объекты первого уровня).
+    depth=2 — вместо подпапки первого уровня берём её содержимое.
+    Ссылки и junction не раскрываем (чтобы не удалить содержимое чужой папки).
+
+    parents — необязательный список: в него добавляются (путь, размер,
+    "папка") для каждой папки, ИЗ КОТОРОЙ будет удалено содержимое (сама
+    папка остаётся). Нужен только для показа в списке — удаляться не будет.
+    """
+    top = collect_items(path)
+    if top is None:
+        return top
+    if parents is not None and top:
+        parents.append((path, sum(sz for _, sz, _ in top), "папка"))
+    if depth <= 1:
+        return top
+    items = []
+    for full, size, kind in top:
+        if kind == "папка" and not _is_link_or_junction(full):
+            inner = collect_items_nested(full, depth - 1, parents)
+            if inner:
+                items.extend(inner)
+        else:
+            items.append((full, size, kind))
+    return items
+
+
 def is_locked_error(exc: Exception) -> bool:
     if isinstance(exc, PermissionError):
         return True
@@ -357,6 +490,118 @@ def recompute_size(path: str) -> int:
             except OSError:
                 pass
     return total
+
+
+def build_tree(path: str, keep_depth: int):
+    """Строит дерево папки для показа: размеры считаются по всей глубине,
+    а сами узлы хранятся только на keep_depth уровней вниз."""
+    node = {"path": path, "name": os.path.basename(path) or path,
+            "size": 0, "dir": True, "children": [], "more": False}
+    try:
+        entries = list(os.scandir(path))
+    except OSError:
+        return node
+    total = 0
+    for e in entries:
+        try:
+            is_link = e.is_symlink() or bool(
+                getattr(e, "is_junction", lambda: False)())
+            if e.is_dir(follow_symlinks=False) and not is_link:
+                child = build_tree(e.path, keep_depth - 1)
+            else:
+                size = 0 if is_link else e.stat(follow_symlinks=False).st_size
+                child = {"path": e.path, "name": e.name, "size": size,
+                         "dir": False, "children": [], "more": False}
+        except OSError:
+            continue
+        total += child["size"]
+        if keep_depth > 0:
+            node["children"].append(child)
+        else:
+            node["more"] = True
+    node["size"] = total
+    return node
+
+
+def tree_lines(root: dict, target_norms: set, root_inside: bool = False):
+    """Строки (rich.Text) для показа одной папки в виде дерева.
+
+    Помечает: что УДАЛИТСЯ, что останется (папка, из которой чистится
+    содержимое), и что лежит внутри удаляемой папки (серым).
+    """
+    lines = []
+
+    def tag(is_dir):
+        return "[папка ] " if is_dir else "[файл  ] "
+
+    def walk(node, prefix, inside):
+        folders = sorted((c for c in node["children"] if c["dir"]),
+                         key=lambda c: -c["size"])
+        files = sorted((c for c in node["children"] if not c["dir"]),
+                       key=lambda c: -c["size"])
+        rows = [("node", c) for c in folders[:TREE_MAX_FOLDERS]]
+        rows += [("node", c) for c in files[:TREE_MAX_FILES]]
+        hid_f = folders[TREE_MAX_FOLDERS:]
+        hid_x = files[TREE_MAX_FILES:]
+        if hid_f:
+            rows.append(("sum", f"… ещё папок: {len(hid_f)}, "
+                                f"{human_size(sum(c['size'] for c in hid_f))}"))
+        if hid_x:
+            rows.append(("sum", f"… ещё файлов: {len(hid_x)}, "
+                                f"{human_size(sum(c['size'] for c in hid_x))}"))
+
+        for idx, (kind, obj) in enumerate(rows):
+            last = idx == len(rows) - 1
+            conn = "└─ " if last else "├─ "
+            line = Text()
+            line.append(prefix + conn, style="dim")
+            if kind == "sum":
+                line.append(obj, style="dim")
+                lines.append(line)
+                continue
+
+            c = obj
+            is_target = (not inside) and (_norm(c["path"]) in target_norms)
+            child_inside = inside or is_target
+            grey = inside and not is_target
+            style_tag = "dim" if grey else ("magenta" if c["dir"] else "cyan")
+            style_size = "dim" if grey else "green"
+            line.append(tag(c["dir"]), style=style_tag)
+            line.append(f"{human_size(c['size']):>10}", style=style_size)
+            line.append(f"  {c['name']}", style="dim" if grey else "")
+            if is_target:
+                line.append("   ← УДАЛИТСЯ", style="bold red")
+            elif c["dir"] and not inside:
+                line.append("   (папка останется, внутри чистится)",
+                            style="yellow")
+            if c["more"]:
+                line.append("   [внутри ещё, свёрнуто]", style="dim")
+            lines.append(line)
+            if c["dir"] and c["children"]:
+                walk(c, prefix + ("   " if last else "│  "), child_inside)
+
+    head = Text()
+    head.append("\n[папка ] ", style="bold magenta")
+    head.append(f"{human_size(root['size']):>10}", style="bold green")
+    head.append(f"  {os.path.abspath(root['path'])}", style="bold")
+    if root_inside:
+        head.append("   (лежит внутри удаляемой папки)", style="dim")
+    else:
+        head.append("   (папка останется, внутри чистится)", style="yellow")
+    lines.append(head)
+    walk(root, "  ", root_inside)
+    return lines
+
+
+def _has_target_ancestor(norm_path: str, target_norms: set) -> bool:
+    cur = norm_path
+    while True:
+        parent = os.path.dirname(cur)
+        if not parent or parent == cur:
+            return False
+        if parent in target_norms:
+            return True
+        cur = parent
 
 
 # ============================================================================
@@ -457,6 +702,47 @@ def clipboard_put(text: str) -> bool:
 
 
 # ============================================================================
+#  ЦВЕТ РАМКИ ОКНА (Windows 11)
+# ----------------------------------------------------------------------------
+#  Через DwmSetWindowAttribute задаём окну цвет рамки (DWMWA_BORDER_COLOR).
+#  Цвет в формате COLORREF: 0x00BBGGRR. Если система не поддерживает
+#  (Windows 10 и старше) — функция тихо вернёт False, ничего не сломается.
+# ============================================================================
+
+def _dwm_set_color(attribute: int, rgb) -> bool:
+    """Задать окну цветовой атрибут DWM: 34 — рамка, 35 — заголовок,
+    36 — цвет текста заголовка."""
+    if os.name != "nt":
+        return False
+    try:
+        import ctypes
+        hwnd = pygame.display.get_wm_info().get("window")
+        if not hwnd:
+            return False
+        r, g, b = rgb
+        colorref = ctypes.c_uint32(r | (g << 8) | (b << 16))
+        result = ctypes.windll.dwmapi.DwmSetWindowAttribute(
+            ctypes.c_void_p(hwnd),
+            attribute,
+            ctypes.byref(colorref),
+            ctypes.sizeof(colorref),
+        )
+        return result == 0
+    except Exception:
+        return False
+
+
+def set_window_border_color(rgb) -> bool:
+    return _dwm_set_color(34, rgb)
+
+
+def set_window_titlebar_colors(bg_rgb, text_rgb) -> bool:
+    ok_bg = _dwm_set_color(35, bg_rgb)
+    ok_text = _dwm_set_color(36, text_rgb)
+    return ok_bg and ok_text
+
+
+# ============================================================================
 #  TERMINAL — окно Pygame, прикидывающееся терминалом
 # ============================================================================
 
@@ -493,6 +779,7 @@ class Terminal:
 
         self.screen = pygame.display.set_mode((1000, 700), pygame.RESIZABLE)
         self.clock = pygame.time.Clock()
+        self._border_focused = None   # None = цвет рамки ещё не задавали
 
         # Моноширинный шрифт
         self.font = None
@@ -678,12 +965,33 @@ class Terminal:
         while self.running:
             self._drain_queue()
             self._handle_events()
+            self._update_border()
             self._apply_fast_scroll()
             self._apply_selection_autoscroll()
             self._draw()
             self.clock.tick(30)
             self.cursor_blink_ms = (self.cursor_blink_ms + 33) % 1000
         pygame.quit()
+
+    def _update_border(self):
+        """Зелёные рамка и заголовок у активного окна, красные — у неактивного."""
+        if not (CHANGE_BORDER_COLOR or CHANGE_TITLEBAR_COLOR):
+            return
+        try:
+            focused = bool(pygame.key.get_focused())
+        except Exception:
+            return
+        if focused != self._border_focused:
+            self._border_focused = focused
+            if CHANGE_BORDER_COLOR:
+                set_window_border_color(
+                    BORDER_COLOR_ACTIVE if focused else BORDER_COLOR_INACTIVE
+                )
+            if CHANGE_TITLEBAR_COLOR:
+                set_window_titlebar_colors(
+                    TITLEBAR_COLOR_ACTIVE if focused else TITLEBAR_COLOR_INACTIVE,
+                    TITLEBAR_TEXT_COLOR,
+                )
 
     def _drain_queue(self):
         """Забираем всё, что воркер положил в out_queue, и применяем к UI."""
@@ -732,6 +1040,7 @@ class Terminal:
                 # важно — проверяем, не изменилась ли ШИРИНА В СИМВОЛАХ.
                 # Если да, все строки надо пересобрать с новыми переносами.
                 self.screen = pygame.display.set_mode((e.w, e.h), pygame.RESIZABLE)
+                self._border_focused = None   # после ресайза задать цвет заново
                 new_chars = self._console_width()
                 if new_chars != self._rendered_width_chars:
                     self._rebuild_lines()
@@ -1197,16 +1506,45 @@ def cleaner_worker(ui: Terminal):
     all_items = []
     missing = []
     blocked = []
+    scanned_roots = []
+    custom_norms = {_norm(p) for p in CUSTOM_RESOLVED}
 
     for path in PATHS:
         if is_forbidden(path):
             blocked.append(path)
             continue
-        result = collect_items(path)
+        if _norm(path) in custom_norms:
+            result = collect_items_nested(path, CUSTOM_SCAN_DEPTH)
+        else:
+            result = collect_items(path)
         if result is None:
             missing.append(path)
             continue
+        if result:
+            scanned_roots.append(path)
         all_items.extend(result)
+
+    # Убираем дубли и объекты, чьи родительские папки уже в списке
+    # (иначе один и тот же вес посчитался бы дважды).
+    _seen = set()
+    _uniq = []
+    for it in all_items:
+        n = _norm(it[0])
+        if n not in _seen:
+            _seen.add(n)
+            _uniq.append((n, it))
+
+    def _parent_in_list(n: str) -> bool:
+        cur = n
+        while True:
+            parent = os.path.dirname(cur)
+            if not parent or parent == cur:
+                return False
+            if parent in _seen:
+                return True
+            cur = parent
+
+    all_items = [it for n, it in _uniq if not _parent_in_list(n)]
 
     if blocked:
         ui.write(Text("\n[!] Заблокированы (системные корни, удаление запрещено):",
@@ -1227,13 +1565,38 @@ def cleaner_worker(ui: Terminal):
 
     total_size = sum(s for _, s, _ in all_items)
 
+    # Дерево: основные папки (самые тяжёлые сверху), внутри каждой —
+    # сначала папки, потом файлы. Красным помечено то, что реально удалится.
     ui.write(Text("\nСписок того, что будет удалено:", style="bold"))
-    for p, s, t in sorted(all_items, key=lambda x: -x[1]):
-        line = Text()
-        line.append(f"  [{t:6}] ", style="cyan" if t == "файл" else "magenta")
-        line.append(f"{human_size(s):>10}", style="green")
-        line.append(f"  {os.path.abspath(p)}")
-        ui.write(line)
+    ui.write(Text("  Основные папки раскрыты: внутри каждой сначала подпапки "
+                  "(с весом), потом файлы. Метка «← УДАЛИТСЯ» — то, что будет "
+                  "удалено; серое — лежит внутри удаляемой папки.",
+                  style="dim"))
+    ui.write(Text("Строю дерево папок, подождите...", style="yellow"))
+
+    target_norms = {_norm(it[0]) for it in all_items}
+    custom_roots = [p for p in scanned_roots if _norm(p) in custom_norms]
+    other_roots = [p for p in scanned_roots if _norm(p) not in custom_norms]
+
+    # Сначала ВАШИ папки (из CUSTOM_PATHS) — в том порядке, как вы их вписали,
+    # потом остальные, самые тяжёлые сверху.
+    groups = []
+    if custom_roots:
+        groups.append(("ВАШИ ПАПКИ (из CUSTOM_PATHS)",
+                       [build_tree(p, TREE_DEPTH) for p in custom_roots]))
+    if other_roots:
+        trees = [build_tree(p, TREE_DEPTH) for p in other_roots]
+        trees.sort(key=lambda n: -n["size"])
+        groups.append(("ОСНОВНЫЕ ПАПКИ", trees))
+
+    for title, trees in groups:
+        ui.write(Text(f"\n{'#' * 60}", style="bold cyan"))
+        ui.write(Text(f"  {title}: {len(trees)} шт.", style="bold cyan"))
+        ui.write(Text("#" * 60, style="bold cyan"))
+        for node in trees:
+            inside = _has_target_ancestor(_norm(node["path"]), target_norms)
+            for line in tree_lines(node, target_norms, inside):
+                ui.write(line)
 
     ui.write(Text(" "))
     ui.write(Text("=" * 60, style="bold"))
